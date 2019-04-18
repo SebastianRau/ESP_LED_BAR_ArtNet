@@ -27,8 +27,8 @@ void onArtDmxFrame(uint8_t* data, uint16_t length, uint8_t sequence);
 void updateDisplay();
 
 
-char    ssid[] = "DMXLED";
-char    password[] = "AT7Bnty5OxajWMVqUdHuHPSjJPq5LT7gXMTZNBXeK5K0uLGlDGuQEBCzi4gwLri";
+char    ssid[]      = "DMXLED";
+char    password[]  = "AT7Bnty5OxajWMVqUdHuHPSjJPq5LT7gXMTZNBXeK5K0uLGlDGuQEBCzi4gwLri";
 char    host_name[] = "LEDBAR-AABBCC";
 
 uint8_t dmxData[DMX_DATA_SIZE];
@@ -50,6 +50,10 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.macAddress(artnet.nodeConfig.mac);
   sprintf(host_name,"LEDBAR-%02X%02X%02X",artnet.nodeConfig.mac[3],artnet.nodeConfig.mac[4],artnet.nodeConfig.mac[5]);
+
+  
+  
+  
   WiFi.hostname();
 
   
@@ -60,9 +64,22 @@ void setup() {
   Serial.println();
   Serial.println();
   Serial.println(host_name);
+  
+  Serial.print("MAC: ");
+  Serial.print(artnet.nodeConfig.mac[0],HEX);
+  Serial.print(":");
+  Serial.print(artnet.nodeConfig.mac[1],HEX);
+  Serial.print(":");
+  Serial.print(artnet.nodeConfig.mac[2],HEX);
+  Serial.print(":");
+  Serial.print(artnet.nodeConfig.mac[3],HEX);
+  Serial.print(":");
+  Serial.print(artnet.nodeConfig.mac[4],HEX);
+  Serial.print(":");
+  Serial.println(artnet.nodeConfig.mac[5],HEX);
 #endif
  
-
+  
   
   
   loadConfig();
@@ -142,7 +159,7 @@ uint8_t ConnectWifi(void){
 void onArtUpdSend(uint8_t ip[4], uint16_t port, uint8_t* packetData, size_t len, uint8_t broadcast) {
  IPAddress ipAddress(ip[0], ip[1], ip[2], ip[3]);
   if (broadcast) {
-    ipAddress = ~WiFi.subnetMask() | WiFi.localIP();
+    ipAddress = (~(uint32_t)WiFi.subnetMask()) | ((uint32_t)WiFi.localIP());
   }
   Udp.beginPacket(ipAddress, port);
   Udp.write(packetData, len);
@@ -266,7 +283,7 @@ int readConfigEEPROM(NODE_CONFIGURATION_T* config, size_t len){
 
 void updateDisplay() {
   APA_Start();
-  for (int i = 0; i < NUM_LEDS; i++)
+  for (int i = NUM_LEDS; i > 0; i--)
   {
     APA_LED(dmxData[i * 3], dmxData[i * 3 + 1], dmxData[i * 3 + 2]);
   }
@@ -292,4 +309,3 @@ void APA_LED(uint8_t R, uint8_t G, uint8_t B){
   SPI.transfer(G);
   SPI.transfer(R);
 }
-
