@@ -6,7 +6,7 @@
 
 #define SERIAL_DEBUG
 
-#define NUM_LEDS      135
+#define NUM_LEDS      120
 #define DMX_DATA_SIZE 512
 #define EEPROM_START_ADDRESS 0
 #define PIN_LED         2
@@ -79,25 +79,18 @@ void setup() {
   Serial.println(artnet.nodeConfig.mac[5],HEX);
 #endif
  
-  
-  
-  
   loadConfig();
-
-  
+ 
   while(ConnectWifi() == 0){
     delay(100);  
   }
 
-  
-  
   artnet.setConfigChangedCallback(onConfigChange);
   artnet.setArtDmxCallback(onArtDmxFrame);
   artnet.begin();
 
   dmxData[0] = 0x00;        // Set First LED red off
   dmxData[1] = 0x40;        // Set First LED to Green  
-  
 }
 
 void loop() {
@@ -167,10 +160,12 @@ void onArtUpdSend(uint8_t ip[4], uint16_t port, uint8_t* packetData, size_t len,
 }
 
 void onNetworkRestart() {
-
+ Serial.print("Network Restart:");
   int32_t dhcpWaitTime = 2000;   //waiting 5ms * 1000 = 5s
   IPAddress zeroIp((uint32_t)0x00000000);
 
+  Serial.print("DHCP Status:");
+  Serial.println(artnet.nodeConfig.dhcpEnable);
   if (!WiFi.isConnected()) {
     digitalWrite(PIN_LED, 0);
     ConnectWifi();
@@ -194,6 +189,7 @@ void onNetworkRestart() {
         return;
       }
     }
+    
     artnet.nodeConfig.ip[0] = WiFi.localIP()[0];          //get IP
     artnet.nodeConfig.ip[1] = WiFi.localIP()[1];          //get IP
     artnet.nodeConfig.ip[2] = WiFi.localIP()[2];          //get IP
@@ -283,7 +279,7 @@ int readConfigEEPROM(NODE_CONFIGURATION_T* config, size_t len){
 
 void updateDisplay() {
   APA_Start();
-  for (int i = NUM_LEDS; i > 0; i--)
+  for (int i = 0; i < NUM_LEDS; i++)
   {
     APA_LED(dmxData[i * 3], dmxData[i * 3 + 1], dmxData[i * 3 + 2]);
   }
