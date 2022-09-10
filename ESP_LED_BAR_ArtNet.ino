@@ -1,15 +1,18 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+#include <ESP8266mDNS.h>
 #include <EEPROM.h>
 #include <SPI.h>
 #include <ArtnetLayer.h>
 
-#define SERIAL_DEBUG
+#define FW_VERSION            "1.0.1"
+//#define SERIAL_DEBUG
 
-#define NUM_LEDS      120
-#define DMX_DATA_SIZE 512
-#define EEPROM_START_ADDRESS 0
-#define PIN_LED         2
+#define NUM_LEDS              120
+#define DMX_DATA_SIZE         512
+#define EEPROM_START_ADDRESS    0
+#define PIN_LED                 2
 
 
 const unsigned long crc_table[16] = {
@@ -39,7 +42,7 @@ ArtnetLayer artnet(onArtUpdSend, onNetworkRestart);
 WiFiUDP Udp;
 
 void setup() {
-  delay(2000);              // sanity check delay - allows reprogramming if accidently blowing power w/leds
+  delay(2000);              // sanity check delay - allows reprogramming if accidently blowing power with leds
   EEPROM.begin(512);
   dmxData[0] = 0x40;        // Set First LED to Red
   SPI.begin();
@@ -49,40 +52,83 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.macAddress(artnet.nodeConfig.mac);
-  sprintf(host_name,"LEDBAR-%02X%02X%02X",artnet.nodeConfig.mac[3],artnet.nodeConfig.mac[4],artnet.nodeConfig.mac[5]);
+  sprintf(host_name, "LEDBAR-%02X%02X%02X", artnet.nodeConfig.mac[3], artnet.nodeConfig.mac[4], artnet.nodeConfig.mac[5]);
+  WiFi.hostname(host_name);
+  ArduinoOTA.setHostname(host_name);
+  ArduinoOTA.setPassword("DMXLED");
 
+  ArduinoOTA.onStart([]() {
+     #ifdef SERIAL_DEBUG
+      Serial.println("OTA Start");
+    #endif
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+      dmxData[i * 3 + 0] = 0x00;
+      dmxData[i * 3 + 1] = 0x00;
+      dmxData[i * 3 + 2] = 0x00;
+    }
+    updateDisplay();
+  });
   
+  ArduinoOTA.onEnd([]() {
+    #ifdef SERIAL_DEBUG
+      Serial.println("\nEnd");
+    #endif
+  });
   
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    #ifdef SERIAL_DEBUG 
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+     #endif
+  });
   
-  WiFi.hostname();
+  ArduinoOTA.onError([](ota_error_t error) {
+    #ifdef SERIAL_DEBUG
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) {
+        Serial.println("Auth Failed");
+      } else if (error == OTA_BEGIN_ERROR) {
+        Serial.println("Begin Failed");
+      } else if (error == OTA_CONNECT_ERROR) {
+        Serial.println("Connect Failed");
+      } else if (error == OTA_RECEIVE_ERROR) {
+        Serial.println("Receive Failed");
+      } else if (error == OTA_END_ERROR) {
+        Serial.println("End Failed");
+      }
+    #endif
+  });
+  ArduinoOTA.begin();
 
-  
-  updateDisplay();          //SET LEDS to 0x40
+  updateDisplay();
+
 #ifdef SERIAL_DEBUG
   Serial.begin(115200);
   while (!Serial);
   Serial.println();
   Serial.println();
+  Serial.print("ArtNet LED Bar fw: ");
+  Serial.println(FW_VERSION);
   Serial.println(host_name);
-  
+
   Serial.print("MAC: ");
-  Serial.print(artnet.nodeConfig.mac[0],HEX);
+  Serial.print(artnet.nodeConfig.mac[0], HEX);
   Serial.print(":");
-  Serial.print(artnet.nodeConfig.mac[1],HEX);
+  Serial.print(artnet.nodeConfig.mac[1], HEX);
   Serial.print(":");
-  Serial.print(artnet.nodeConfig.mac[2],HEX);
+  Serial.print(artnet.nodeConfig.mac[2], HEX);
   Serial.print(":");
-  Serial.print(artnet.nodeConfig.mac[3],HEX);
+  Serial.print(artnet.nodeConfig.mac[3], HEX);
   Serial.print(":");
-  Serial.print(artnet.nodeConfig.mac[4],HEX);
+  Serial.print(artnet.nodeConfig.mac[4], HEX);
   Serial.print(":");
-  Serial.println(artnet.nodeConfig.mac[5],HEX);
+  Serial.println(artnet.nodeConfig.mac[5], HEX);
 #endif
- 
+
   loadConfig();
- 
-  while(ConnectWifi() == 0){
-    delay(100);  
+
+  while (ConnectWifi() == 0) {
+    delay(100);
   }
 
   artnet.setConfigChangedCallback(onConfigChange);
@@ -90,10 +136,12 @@ void setup() {
   artnet.begin();
 
   dmxData[0] = 0x00;        // Set First LED red off
-  dmxData[1] = 0x40;        // Set First LED to Green  
+  dmxData[1] = 0x40;        // Set First LED to Green
 }
 
 void loop() {
+  ArduinoOTA.handle();
+  
   int packetSize = Udp.parsePacket();
   if (packetSize > 0 && packetSize <= ART_NET_BUFFER_SIZE) {
     Udp.read(artnet.getPacketBuffer(), ART_NET_BUFFER_SIZE);
@@ -116,7 +164,7 @@ void loop() {
   }
 }
 
-uint8_t ConnectWifi(void){
+uint8_t ConnectWifi(void) {
   int connectionCount = 0;
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -150,7 +198,7 @@ uint8_t ConnectWifi(void){
 }
 
 void onArtUpdSend(uint8_t ip[4], uint16_t port, uint8_t* packetData, size_t len, uint8_t broadcast) {
- IPAddress ipAddress(ip[0], ip[1], ip[2], ip[3]);
+  IPAddress ipAddress(ip[0], ip[1], ip[2], ip[3]);
   if (broadcast) {
     ipAddress = (~(uint32_t)WiFi.subnetMask()) | ((uint32_t)WiFi.localIP());
   }
@@ -160,7 +208,7 @@ void onArtUpdSend(uint8_t ip[4], uint16_t port, uint8_t* packetData, size_t len,
 }
 
 void onNetworkRestart() {
- Serial.print("Network Restart:");
+  Serial.print("Network Restart:");
   int32_t dhcpWaitTime = 2000;   //waiting 5ms * 1000 = 5s
   IPAddress zeroIp((uint32_t)0x00000000);
 
@@ -189,7 +237,7 @@ void onNetworkRestart() {
         return;
       }
     }
-    
+
     artnet.nodeConfig.ip[0] = WiFi.localIP()[0];          //get IP
     artnet.nodeConfig.ip[1] = WiFi.localIP()[1];          //get IP
     artnet.nodeConfig.ip[2] = WiFi.localIP()[2];          //get IP
@@ -211,9 +259,9 @@ void onNetworkRestart() {
   Serial.println(WiFi.subnetMask());
   Udp.begin(ART_NET_PORT);
 #ifdef SERIAL_DEBUG
-        Serial.println("Network config done.");
+  Serial.println("Network config done.");
 #endif
-  
+
 }
 
 
@@ -229,8 +277,6 @@ void onConfigChange(NODE_CONFIGURATION_T* config) {
   Serial.println("writing config");
 }
 
-
-
 void loadConfig() {
   readConfigEEPROM(&artnet.nodeConfig, sizeof(NODE_CONFIGURATION_T) );
   WiFi.macAddress(artnet.nodeConfig.mac);
@@ -241,7 +287,6 @@ void loadConfig() {
   } else {
     Serial.println(F("CONFIG LOAD SUCCESSFUL."));
   }
-  
 }
 
 void loadDefaultConfig() {
@@ -251,7 +296,7 @@ void loadDefaultConfig() {
 }
 
 
-int writeConfigEEPROM(NODE_CONFIGURATION_T* config, size_t len ){
+int writeConfigEEPROM(NODE_CONFIGURATION_T* config, size_t len ) {
 #ifdef SERIAL_DEBUG
   Serial.println("Storing values");
 #endif
@@ -266,7 +311,7 @@ int writeConfigEEPROM(NODE_CONFIGURATION_T* config, size_t len ){
   return i;
 }
 
-int readConfigEEPROM(NODE_CONFIGURATION_T* config, size_t len){
+int readConfigEEPROM(NODE_CONFIGURATION_T* config, size_t len) {
   uint8_t* data = (uint8_t*)config;
   unsigned int i = 0;
   unsigned int eeprom_Address = EEPROM_START_ADDRESS;
@@ -286,20 +331,20 @@ void updateDisplay() {
   APA_Stop();
 }
 
-void APA_Start(){
+void APA_Start() {
   SPI.transfer(0);
   SPI.transfer(0);
   SPI.transfer(0);
   SPI.transfer(0);
 }
 
-void APA_Stop(){
+void APA_Stop() {
   for (int i = 0; i < (NUM_LEDS / 2); i++) {
     SPI.transfer(0xFF); // one stop frame for every 32 leds
   }
 }
 
-void APA_LED(uint8_t R, uint8_t G, uint8_t B){
+void APA_LED(uint8_t R, uint8_t G, uint8_t B) {
   SPI.transfer(0xFF);
   SPI.transfer(B);
   SPI.transfer(G);
